@@ -11,6 +11,7 @@ class AppState: ObservableObject {
     @AppStorage("automaticDeviceDiscoveryEnabled") var automaticDeviceDiscoveryEnabled: Bool = true
 
     @AppStorage("wakeOnCameraInfoJSON") private var wakeOnCameraInfoJSON: String = ""
+    @AppStorage("triggerCameraInfoJSON") private var triggerCameraInfoJSON: String = ""
 
     @Published var selectedCamera: StoredCameraInfo? {
         didSet {
@@ -25,7 +26,31 @@ class AppState: ObservableObject {
         }
     }
 
+    /// The camera that turns lights on with "Lights on with Camera". nil means any camera.
+    @Published var triggerCamera: StoredCameraInfo? {
+        didSet {
+            triggerCameraInfoJSON = Self.encode(triggerCamera)
+        }
+    }
+
+    private static func encode(_ camera: StoredCameraInfo?) -> String {
+        guard let camera,
+              let data = try? JSONEncoder().encode(camera),
+              let jsonString = String(data: data, encoding: .utf8)
+        else {
+            return ""
+        }
+        return jsonString
+    }
+
+    private static func decode(_ json: String) -> StoredCameraInfo? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(StoredCameraInfo.self, from: data)
+    }
+
     init() {
+        triggerCamera = Self.decode(triggerCameraInfoJSON)
+
         if let data = wakeOnCameraInfoJSON.data(using: .utf8),
            let cameraInfo = try? JSONDecoder().decode(StoredCameraInfo.self, from: data)
         {
@@ -94,12 +119,19 @@ class AppCoordinator: ObservableObject {
     }
 
     private func setupBindings() {
+        cameraDetector.triggerCameraID = appState.triggerCamera?.id
         cameraDetector.updateMonitoring(enabled: appState.lightsOnWithCamera)
 
         appState.objectWillChange
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.cameraDetector.updateMonitoring(enabled: self.appState.lightsOnWithCamera)
+            }
+            .store(in: &cancellables)
+
+        appState.$triggerCamera
+            .sink { [weak self] camera in
+                self?.cameraDetector.triggerCameraID = camera?.id
             }
             .store(in: &cancellables)
     }

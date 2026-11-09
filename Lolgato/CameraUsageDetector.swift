@@ -9,6 +9,16 @@ class CameraUsageDetector {
     private var lastActiveState: Bool?
     private var isMonitoringEnabled: Bool = false
 
+    /// When set, only this camera (by unique ID) counts as the camera being in use. Other
+    /// cameras can run all the time, e.g. for head tracking, and would otherwise hide when
+    /// this one starts.
+    var triggerCameraID: String? {
+        didSet {
+            guard triggerCameraID != oldValue else { return }
+            logger.info("Trigger camera set to \(self.triggerCameraID ?? "any camera", privacy: .public)")
+        }
+    }
+
     private let cameraStatusSubject = CurrentValueSubject<Bool, Never>(false)
     var cameraStatusPublisher: AnyPublisher<Bool, Never> {
         cameraStatusSubject.eraseToAnyPublisher()
@@ -18,6 +28,7 @@ class CameraUsageDetector {
         case failedToGetDevices(OSStatus)
         case allDevicesFailed
         case noDevicesFound
+        case triggerCameraStatusUnavailable
     }
 
     func updateMonitoring(enabled: Bool, interval: TimeInterval = 1.0) {
@@ -122,6 +133,17 @@ class CameraUsageDetector {
             throw CameraError.failedToGetDevices(result)
         }
 
+        if let triggerCameraID {
+            // An unplugged trigger camera is simply not in use.
+            guard let device = devices.first(where: { deviceUID(of: $0) == triggerCameraID }) else {
+                return false
+            }
+            guard let isUsed = isDeviceInUse(device) else {
+                throw CameraError.triggerCameraStatusUnavailable
+            }
+            return isUsed
+        }
+
         var failedDeviceCount = 0
         for device in devices {
             if let isUsed = isDeviceInUse(device) {
@@ -138,6 +160,22 @@ class CameraUsageDetector {
         }
 
         return false
+    }
+
+    private func deviceUID(of device: CMIODeviceID) -> String? {
+        var propertyAddress = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIODevicePropertyDeviceUID),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+        var uid: Unmanaged<CFString>?
+        let dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        var dataUsed: UInt32 = 0
+        let result = CMIOObjectGetPropertyData(device, &propertyAddress, 0, nil, dataSize, &dataUsed, &uid)
+        guard result == kCMIOHardwareNoError, let uid else {
+            return nil
+        }
+        return uid.takeRetainedValue() as String
     }
 
     private func isDeviceInUse(_ device: CMIODeviceID) -> Bool? {
