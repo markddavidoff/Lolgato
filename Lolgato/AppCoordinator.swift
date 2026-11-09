@@ -33,6 +33,27 @@ class AppState: ObservableObject {
         }
     }
 
+    /// A USB camera's unique ID includes its position on the USB bus, so it changes when the camera
+    /// moves to another port or a dock re-enumerates. When a saved camera's ID is gone but a
+    /// connected camera has the same name, point the saved camera at it.
+    func rematchSavedCameras(to availableCameras: [CameraDevice]) {
+        if let rematched = Self.rematch(triggerCamera, in: availableCameras) {
+            triggerCamera = rematched
+        }
+        if let rematched = Self.rematch(selectedCamera, in: availableCameras) {
+            selectedCamera = rematched
+        }
+    }
+
+    private static func rematch(_ saved: StoredCameraInfo?, in availableCameras: [CameraDevice]) -> StoredCameraInfo? {
+        guard let saved, !availableCameras.contains(where: { $0.id == saved.id }),
+              let match = availableCameras.first(where: { $0.name == saved.name })
+        else {
+            return nil
+        }
+        return StoredCameraInfo(id: match.id, name: match.name)
+    }
+
     private static func encode(_ camera: StoredCameraInfo?) -> String {
         guard let camera,
               let data = try? JSONEncoder().encode(camera),
@@ -132,6 +153,12 @@ class AppCoordinator: ObservableObject {
         appState.$triggerCamera
             .sink { [weak self] camera in
                 self?.cameraDetector.triggerCameraID = camera?.id
+            }
+            .store(in: &cancellables)
+
+        cameraMonitor.$availableCameras
+            .sink { [weak self] cameras in
+                self?.appState.rematchSavedCameras(to: cameras)
             }
             .store(in: &cancellables)
     }
