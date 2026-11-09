@@ -6,7 +6,11 @@ struct LolgatoApp: App {
 
     var body: some Scene {
         MenuBarExtra("Lolgato", image: "MenuBarIcon") {
-            LolgatoMenu(appState: coordinator.appState, deviceManager: coordinator.deviceManager)
+            LolgatoMenu(
+                appState: coordinator.appState,
+                deviceManager: coordinator.deviceManager,
+                cameraMonitor: coordinator.cameraMonitor
+            )
         }
         .menuBarExtraStyle(.menu)
 
