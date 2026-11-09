@@ -9,12 +9,45 @@ struct AutomationSettingsView: View {
         return cameraMonitor.availableCameras.contains { $0.id == selectedCameraID }
     }
 
+    private var isTriggerCameraConnected: Bool {
+        guard let triggerCameraID = appState.triggerCamera?.id else { return true }
+        return cameraMonitor.availableCameras.contains { $0.id == triggerCameraID }
+    }
+
     var body: some View {
         VStack(spacing: 20) {
             settingRow(label: "Camera:") {
-                Toggle("Lights on automatically", isOn: $appState.lightsOnWithCamera)
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Lights on automatically", isOn: $appState.lightsOnWithCamera)
+
+                    Picker("Trigger camera:", selection: Binding(
+                        get: { appState.triggerCamera?.id ?? "" },
+                        set: { newId in
+                            if let selected = cameraMonitor.availableCameras.first(where: { $0.id == newId }) {
+                                appState.triggerCamera = StoredCameraInfo(id: selected.id, name: selected.name)
+                            } else if newId.isEmpty {
+                                appState.triggerCamera = nil
+                            }
+                        }
+                    )) {
+                        Text("Any camera").tag("")
+                        ForEach(cameraMonitor.availableCameras) { camera in
+                            Text(camera.name).tag(camera.id)
+                        }
+                        if let triggerCamera = appState.triggerCamera, !isTriggerCameraConnected {
+                            Text("\(triggerCamera.name) (not connected)").tag(triggerCamera.id)
+                        }
+                    }
+                    .pickerStyle(MenuPickerStyle())
+
+                    if let triggerCamera = appState.triggerCamera, !isTriggerCameraConnected {
+                        Text("Warning: '\(triggerCamera.name)' is not currently connected.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
             } caption: {
-                Text("Turn on lights when camera is in use.")
+                Text("Turn on lights when the trigger camera is in use. Pick a specific camera if another one is always running.")
             }
 
             settingRow(label: "Sleep:") {
@@ -88,6 +121,7 @@ struct AutomationSettingsView: View {
 
     private func resetToDefaults() {
         appState.lightsOnWithCamera = false
+        appState.triggerCamera = nil
         appState.lightsOffOnSleep = false
         appState.syncWithNightShift = false
         appState.wakeOnCameraDetectionEnabled = false
